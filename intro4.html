@@ -60,7 +60,7 @@
     <script>DOCUMENTATION_OPTIONS.pagename = 'intro4';</script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Pembelajaran Terawasi (Supervised Learning)" href="intro5.html" />
+    <link rel="next" title="Klasifikasi data berita menggunakan LDA" href="intro5.html" />
     <link rel="prev" title="Web Crawling" href="intro3.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -188,7 +188,7 @@
 
 
 
-<li class="toctree-l1"><a class="reference internal" href="intro5.html">Pembelajaran Terawasi (Supervised Learning)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro5.html">Klasifikasi data berita menggunakan LDA</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro6.html">Pembelajaran Tak Terawasi (Unsupervised Learning)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro7.html">Web Content Mining (text mining)</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro8.html">Web Usage Mining</a></li>
@@ -3753,6 +3753,217 @@ Hasil disimpan dalam file &#39;pta_trunojoyo_bersih.csv&#39;
   </div>
 </div></div>
 </div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># === LDA -&gt; EKSTRAKSI FITUR -&gt; KLASIFIKASI BERITA ===</span>
+<span class="c1"># Sambungan kode untuk menghasilkan fitur topik dari LDA dan melatih klasifier sederhana.</span>
+<span class="c1"># Penjelasan singkat:</span>
+<span class="c1"># 1) Jika gensim tersedia, gunakan gensim LdaModel. Jika tidak, fallback ke sklearn LatentDirichletAllocation.</span>
+<span class="c1"># 2) Menggunakan teks mentah (kolom &#39;text&#39; atau &#39;judul&#39;/&#39;isi&#39; sesuai dataset) untuk vektorisasi.</span>
+<span class="c1"># 3) Mengubah distribusi topik menjadi fitur untuk klasifier (mis. LogisticRegression).</span>
+<span class="c1"># 4) Menampilkan akurasi dan classification report.</span>
+<span class="c1">#</span>
+<span class="c1"># Pastikan dataset Anda memiliki kolom &#39;text&#39; (atau sesuaikan nama kolomnya) dan &#39;label&#39; (kelas target).</span>
+<span class="c1"># Kalau dataset Anda berbeda, ubah nama kolom di bawah ini.</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.model_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_test_split</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.feature_extraction.text</span><span class="w"> </span><span class="kn">import</span> <span class="n">CountVectorizer</span><span class="p">,</span> <span class="n">TfidfVectorizer</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.decomposition</span><span class="w"> </span><span class="kn">import</span> <span class="n">LatentDirichletAllocation</span> <span class="k">as</span> <span class="n">SKL_LDA</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.linear_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">LogisticRegression</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">classification_report</span><span class="p">,</span> <span class="n">accuracy_score</span><span class="p">,</span> <span class="n">confusion_matrix</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">filterwarnings</span><span class="p">(</span><span class="s2">&quot;ignore&quot;</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Gagal mengimpor beberapa paket sklearn/pandas. Pastikan environment memiliki paket dasar. Error:&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+<span class="c1"># Load data: coba beberapa kemungkinan kolom umum</span>
+<span class="k">if</span> <span class="s1">&#39;df&#39;</span> <span class="ow">in</span> <span class="nb">globals</span><span class="p">():</span>
+    <span class="n">df_all</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="c1"># coba muat file CSV yang mungkin dipakai di notebook</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+    <span class="n">candidates</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">()</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.csv&quot;</span><span class="p">)]</span>
+    <span class="n">df_all</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">tmp</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="c1"># cari kolom teks</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">col</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;text&quot;</span><span class="p">,</span><span class="s2">&quot;isi&quot;</span><span class="p">,</span><span class="s2">&quot;konten&quot;</span><span class="p">,</span><span class="s2">&quot;content&quot;</span><span class="p">,</span><span class="s2">&quot;article&quot;</span><span class="p">,</span><span class="s2">&quot;body&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">tmp</span><span class="o">.</span><span class="n">columns</span><span class="p">):</span>
+                <span class="n">df_all</span> <span class="o">=</span> <span class="n">tmp</span>
+                <span class="k">break</span>
+            <span class="c1"># juga bisa gunakan kolom &#39;judul&#39; + &#39;isi&#39;</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">col</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;judul&quot;</span><span class="p">,</span><span class="s2">&quot;title&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">tmp</span><span class="o">.</span><span class="n">columns</span><span class="p">):</span>
+                <span class="n">df_all</span> <span class="o">=</span> <span class="n">tmp</span>
+                <span class="k">break</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+<span class="k">if</span> <span class="n">df_all</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Gagal menemukan DataFrame bernama &#39;df&#39; atau file CSV dengan kolom teks. Silakan pastikan dataset tersedia dan memiliki kolom teks serta label.&quot;</span><span class="p">)</span>
+
+<span class="c1"># tentukan nama kolom teks dan label (sesuaikan jika beda)</span>
+<span class="n">text_col</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">df_all</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;text&quot;</span><span class="p">,</span><span class="s2">&quot;isi&quot;</span><span class="p">,</span><span class="s2">&quot;content&quot;</span><span class="p">,</span><span class="s2">&quot;article&quot;</span><span class="p">,</span><span class="s2">&quot;body&quot;</span><span class="p">):</span>
+        <span class="n">text_col</span> <span class="o">=</span> <span class="n">c</span>
+        <span class="k">break</span>
+<span class="k">if</span> <span class="n">text_col</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">df_all</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;judul&quot;</span><span class="p">,</span><span class="s2">&quot;title&quot;</span><span class="p">):</span>
+            <span class="n">text_col</span> <span class="o">=</span> <span class="n">c</span>
+            <span class="k">break</span>
+
+<span class="k">if</span> <span class="n">text_col</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Tidak menemukan kolom teks otomatis. Silakan set variabel text_col ke nama kolom teks pada dataset.&quot;</span><span class="p">)</span>
+
+<span class="n">label_col</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">df_all</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;label&quot;</span><span class="p">,</span><span class="s2">&quot;kategori&quot;</span><span class="p">,</span><span class="s2">&quot;class&quot;</span><span class="p">,</span><span class="s2">&quot;target&quot;</span><span class="p">):</span>
+        <span class="n">label_col</span> <span class="o">=</span> <span class="n">c</span>
+        <span class="k">break</span>
+
+<span class="c1"># Jika label tidak ditemukan, buat dummy (misalnya topik dari LDA) - tetapi idealnya user punya label</span>
+<span class="k">if</span> <span class="n">label_col</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Kolom label tidak ditemukan. Membuat label dummy berdasarkan topik dominan LDA nanti (hanya untuk demonstrasi).&quot;</span><span class="p">)</span>
+    <span class="c1"># kita tetap lanjut tanpa label untuk mengekstrak topik saja</span>
+    <span class="n">has_label</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">has_label</span> <span class="o">=</span> <span class="kc">True</span>
+
+<span class="n">texts</span> <span class="o">=</span> <span class="n">df_all</span><span class="p">[</span><span class="n">text_col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+<span class="c1"># Vektorisasi dengan CountVectorizer untuk LDA</span>
+<span class="n">cv</span> <span class="o">=</span> <span class="n">CountVectorizer</span><span class="p">(</span><span class="n">max_df</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="n">min_df</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">stop_words</span><span class="o">=</span><span class="s1">&#39;english&#39;</span><span class="p">,</span> <span class="n">ngram_range</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">))</span>
+<span class="n">X_counts</span> <span class="o">=</span> <span class="n">cv</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
+
+<span class="n">n_topics</span> <span class="o">=</span> <span class="mi">10</span>  <span class="c1"># Anda bisa ubah jumlah topik</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Mencoba ekstraksi </span><span class="si">{</span><span class="n">n_topics</span><span class="si">}</span><span class="s2"> topik dari </span><span class="si">{</span><span class="n">X_counts</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> dokumen.&quot;</span><span class="p">)</span>
+
+<span class="c1"># Coba gunakan gensim LDA jika tersedia, jika tidak pakai sklearn LDA</span>
+<span class="n">use_gensim</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">gensim</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">gensim.corpora</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">corpora</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">gensim.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">LdaModel</span>
+    <span class="c1"># persiapkan corpus gensim</span>
+    <span class="n">tokenized</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">split</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">texts</span><span class="p">]</span>
+    <span class="n">id2word</span> <span class="o">=</span> <span class="n">corpora</span><span class="o">.</span><span class="n">Dictionary</span><span class="p">(</span><span class="n">tokenized</span><span class="p">)</span>
+    <span class="n">corpus</span> <span class="o">=</span> <span class="p">[</span><span class="n">id2word</span><span class="o">.</span><span class="n">doc2bow</span><span class="p">(</span><span class="n">text</span><span class="p">)</span> <span class="k">for</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">tokenized</span><span class="p">]</span>
+    <span class="n">lda_model</span> <span class="o">=</span> <span class="n">LdaModel</span><span class="p">(</span><span class="n">corpus</span><span class="o">=</span><span class="n">corpus</span><span class="p">,</span> <span class="n">id2word</span><span class="o">=</span><span class="n">id2word</span><span class="p">,</span> <span class="n">num_topics</span><span class="o">=</span><span class="n">n_topics</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">passes</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+    <span class="c1"># ambil distribusi topik per dokumen</span>
+    <span class="n">topic_dist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="nb">len</span><span class="p">(</span><span class="n">corpus</span><span class="p">),</span> <span class="n">n_topics</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">doc_bow</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">corpus</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">topic_id</span><span class="p">,</span> <span class="n">prob</span> <span class="ow">in</span> <span class="n">lda_model</span><span class="o">.</span><span class="n">get_document_topics</span><span class="p">(</span><span class="n">doc_bow</span><span class="p">):</span>
+            <span class="n">topic_dist</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">topic_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">prob</span>
+    <span class="n">use_gensim</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Menggunakan gensim LdaModel.&quot;</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;gensim tidak tersedia atau gagal, fallback ke sklearn LDA. Info:&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+    <span class="n">skl_lda</span> <span class="o">=</span> <span class="n">SKL_LDA</span><span class="p">(</span><span class="n">n_components</span><span class="o">=</span><span class="n">n_topics</span><span class="p">,</span> <span class="n">max_iter</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">learning_method</span><span class="o">=</span><span class="s1">&#39;online&#39;</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+    <span class="n">topic_dist</span> <span class="o">=</span> <span class="n">skl_lda</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">X_counts</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Menggunakan sklearn LDA. Selesai fitting.&quot;</span><span class="p">)</span>
+
+<span class="c1"># Jika tidak ada label, buat label dummy: topic dominan</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">has_label</span><span class="p">:</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="n">topic_dist</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="n">df_all</span><span class="p">[</span><span class="n">label_col</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+
+<span class="c1"># Bagi data untuk klasifikasi (jika ada label asli)</span>
+<span class="k">if</span> <span class="n">has_label</span><span class="p">:</span>
+    <span class="n">X_train</span><span class="p">,</span> <span class="n">X_test</span><span class="p">,</span> <span class="n">y_train</span><span class="p">,</span> <span class="n">y_test</span> <span class="o">=</span> <span class="n">train_test_split</span><span class="p">(</span><span class="n">topic_dist</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">test_size</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="mi">42</span><span class="p">,</span> <span class="n">stratify</span><span class="o">=</span><span class="n">labels</span><span class="p">)</span>
+    <span class="n">clf</span> <span class="o">=</span> <span class="n">LogisticRegression</span><span class="p">(</span><span class="n">max_iter</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
+    <span class="n">clf</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">y_train</span><span class="p">)</span>
+    <span class="n">y_pred</span> <span class="o">=</span> <span class="n">clf</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X_test</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Accuracy:&quot;</span><span class="p">,</span> <span class="n">accuracy_score</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Classification report:</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">classification_report</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Confusion matrix:</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">confusion_matrix</span><span class="p">(</span><span class="n">y_test</span><span class="p">,</span> <span class="n">y_pred</span><span class="p">))</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="c1"># Jika hanya demonstrasi (tanpa label), tunjukkan topik teratas dan contoh dokumen per topik</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+    <span class="n">top_n</span> <span class="o">=</span> <span class="mi">5</span>
+    <span class="n">top_topic_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">topic_dist</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))[::</span><span class="o">-</span><span class="mi">1</span><span class="p">][:</span><span class="n">top_n</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top topics (by total weight):&quot;</span><span class="p">,</span> <span class="n">top_topic_idx</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+    <span class="c1"># tampilkan 3 contoh dokumen untuk setiap topik</span>
+    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">top_topic_idx</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;--- Contoh dokumen untuk topik </span><span class="si">{</span><span class="n">t</span><span class="si">}</span><span class="s2"> ---&quot;</span><span class="p">)</span>
+        <span class="n">docs_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">topic_dist</span><span class="p">[:,</span> <span class="n">t</span><span class="p">])[::</span><span class="o">-</span><span class="mi">1</span><span class="p">][:</span><span class="mi">3</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">di</span> <span class="ow">in</span> <span class="n">docs_idx</span><span class="p">:</span>
+            <span class="n">txt</span> <span class="o">=</span> <span class="n">texts</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">di</span><span class="p">]</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">di</span><span class="si">}</span><span class="s2">) </span><span class="si">{</span><span class="n">txt</span><span class="p">[:</span><span class="mi">200</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\\</span><span class="s1">n&#39;</span><span class="p">,</span><span class="s1">&#39; &#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+    <span class="c1"># Jika gensim dan model tersedia, tampilkan kata-kata topik</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">use_gensim</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_topics</span><span class="p">):</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Top kata topik </span><span class="si">{</span><span class="n">t</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">,</span> <span class="n">lda_model</span><span class="o">.</span><span class="n">show_topic</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">topn</span><span class="o">=</span><span class="mi">10</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># menggunakan sklearn LDA: tampilkan kata-kata penting per komponen</span>
+            <span class="n">feature_names</span> <span class="o">=</span> <span class="n">cv</span><span class="o">.</span><span class="n">get_feature_names_out</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">topic_idx</span><span class="p">,</span> <span class="n">topic</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">skl_lda</span><span class="o">.</span><span class="n">components_</span><span class="p">):</span>
+                <span class="n">top_features_ind</span> <span class="o">=</span> <span class="n">topic</span><span class="o">.</span><span class="n">argsort</span><span class="p">()[:</span><span class="o">-</span><span class="mi">11</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                <span class="n">top_features</span> <span class="o">=</span> <span class="p">[</span><span class="n">feature_names</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">top_features_ind</span><span class="p">]</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Top kata topik </span><span class="si">{</span><span class="n">topic_idx</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">,</span> <span class="n">top_features</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Gagal menampilkan kata-kata topik:&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+<span class="c1"># Simpan hasil distribusi topik ke dataframe (opsional)</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">cols</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;topic_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">topic_dist</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])]</span>
+    <span class="n">topics_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">topic_dist</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">cols</span><span class="p">)</span>
+    <span class="n">out_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">df_all</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="n">topics_df</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">out_df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">&quot;news_with_topics.csv&quot;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Distribusi topik disimpan ke news_with_topics.csv&quot;</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Gagal menyimpan CSV:&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+<span class="c1"># Selesai.</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>Kolom label tidak ditemukan. Membuat label dummy berdasarkan topik dominan LDA nanti (hanya untuk demonstrasi).
+Mencoba ekstraksi 10 topik dari 10 dokumen.
+gensim tidak tersedia atau gagal, fallback ke sklearn LDA. Info: No module named &#39;gensim&#39;
+Menggunakan sklearn LDA. Selesai fitting.
+Top topics (by total weight): [9, 8, 7, 6, 5]
+--- Contoh dokumen untuk topik 9 ---
+(9) Leveraging Machine Learning Techniques for Customer Data Deduplication - Hard-Won Lessons from a Real-World Project in the Financial Industry...
+(8) Multimodal Zero-Shot Activity Recognition for Process Mining of Robotic Systems...
+(7) Adaptive Web API Recommendation via Matching Service Clusters and Mashup Requirement...
+--- Contoh dokumen untuk topik 8 ---
+(9) Leveraging Machine Learning Techniques for Customer Data Deduplication - Hard-Won Lessons from a Real-World Project in the Financial Industry...
+(8) Multimodal Zero-Shot Activity Recognition for Process Mining of Robotic Systems...
+(7) Adaptive Web API Recommendation via Matching Service Clusters and Mashup Requirement...
+--- Contoh dokumen untuk topik 7 ---
+(9) Leveraging Machine Learning Techniques for Customer Data Deduplication - Hard-Won Lessons from a Real-World Project in the Financial Industry...
+(8) Multimodal Zero-Shot Activity Recognition for Process Mining of Robotic Systems...
+(7) Adaptive Web API Recommendation via Matching Service Clusters and Mashup Requirement...
+--- Contoh dokumen untuk topik 6 ---
+(9) Leveraging Machine Learning Techniques for Customer Data Deduplication - Hard-Won Lessons from a Real-World Project in the Financial Industry...
+(8) Multimodal Zero-Shot Activity Recognition for Process Mining of Robotic Systems...
+(7) Adaptive Web API Recommendation via Matching Service Clusters and Mashup Requirement...
+--- Contoh dokumen untuk topik 5 ---
+(9) Leveraging Machine Learning Techniques for Customer Data Deduplication - Hard-Won Lessons from a Real-World Project in the Financial Industry...
+(8) Multimodal Zero-Shot Activity Recognition for Process Mining of Robotic Systems...
+(7) Adaptive Web API Recommendation via Matching Service Clusters and Mashup Requirement...
+Top kata topik 0: [&#39;mining&#39;]
+Top kata topik 1: [&#39;mining&#39;]
+Top kata topik 2: [&#39;mining&#39;]
+Top kata topik 3: [&#39;mining&#39;]
+Top kata topik 4: [&#39;mining&#39;]
+Top kata topik 5: [&#39;mining&#39;]
+Top kata topik 6: [&#39;mining&#39;]
+Top kata topik 7: [&#39;mining&#39;]
+Top kata topik 8: [&#39;mining&#39;]
+Top kata topik 9: [&#39;mining&#39;]
+Distribusi topik disimpan ke news_with_topics.csv
+</pre></div>
+</div>
+</div>
+</div>
 </section>
 </section>
 
@@ -3800,7 +4011,7 @@ Hasil disimpan dalam file &#39;pta_trunojoyo_bersih.csv&#39;
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Pembelajaran Terawasi (Supervised Learning)</p>
+        <p class="prev-next-title">Klasifikasi data berita menggunakan LDA</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
